@@ -1,0 +1,9 @@
+{
+  "name": "alphea-cli",
+  "version": "1.0.0",
+  "description": "CLI untuk ALPHEA: login email+password via .env (GoTrue), profil, probe endpoint edge, missions/points.",
+  "type": "module",
+  "bin": { "alphea": "./alphea.js" },
+  "scripts": { "start": "node alphea.js" },
+  "engines": { "node": ">=18" }
+}
