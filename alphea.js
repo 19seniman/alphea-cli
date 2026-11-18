@@ -332,6 +332,7 @@ function maskDeep(v, d = 0) {
 }
 
 let lastWriteAt = 0;
+let fastExit = false;
 async function pace(method) {
   if (method === 'GET') return;
   const gap = withJitter(GUARD.minGapMs);
@@ -352,7 +353,7 @@ async function send(method, url, { body, auth = true, timeoutMs = GUARD.timeoutM
       res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: ac.signal });
     } catch (e) {
       clearTimeout(timer);
-      if (attempt < GUARD.maxRetries) {
+      if (attempt < (fastExit ? 0 : GUARD.maxRetries)) {
         const w = withJitter(GUARD.backoffMs * 2 ** attempt);
         log(C.y(`  network error \u2014 retry ${attempt + 1}/${GUARD.maxRetries} dalam ${Math.round(w / 1000)}s`));
         await sleep(w);
@@ -362,9 +363,10 @@ async function send(method, url, { body, auth = true, timeoutMs = GUARD.timeoutM
     }
     clearTimeout(timer);
 
-    if (res.status === 429 || res.status >= 500) {
+    const retryBudget = fastExit ? 0 : GUARD.maxRetries;
+    if (!fastExit && (res.status === 429 || res.status >= 500)) {
       const ra = Number(res.headers.get('retry-after'));
-      if (attempt < GUARD.maxRetries) {
+      if (attempt < retryBudget) {
         const w = withJitter(Number.isFinite(ra) && ra > 0 ? ra * 1000 : GUARD.backoffMs * 2 ** attempt);
         log(C.y(`  HTTP ${res.status} \u2014 cooldown ${Math.round(w / 1000)}s`));
         await sleep(w);
@@ -983,11 +985,14 @@ async function cmdQuests(flags) {
 async function claimQuest(q) {
   const id = q.questId;
   const pk = q.periodKey;
+  // bundle memakai 'claimIdempotencyKey' saat memanggil claimQuest
+  const idem = crypto.randomUUID();
   const bodies = [
+    { questId: id, claimIdempotencyKey: idem },
+    { questId: id, periodKey: pk, claimIdempotencyKey: idem },
     { questId: id, periodKey: pk },
+    { quest_id: id, claim_idempotency_key: idem },
     { questId: id },
-    { quest_id: id, period_key: pk },
-    { questId: id, period_key: pk },
   ].filter((b) => Object.values(b).every((v) => v !== undefined && v !== ''));
   return rpcCandidates(SVC.quest, 'ClaimQuest', bodies);
 }
@@ -1045,6 +1050,30 @@ async function cmdAuto(flags) {
   );
   if (dry) console.log(C.y('  DRY-RUN: tidak ada request tulis'));
   console.log('');
+  let stopping = false;
+  let sigints = 0;
+  const shutdown = async (why) => {
+    sigints++;
+    if (sigints >= 2) {
+      console.log(`\n${C.y('keluar paksa')}`);
+      process.exit(130);
+    }
+    if (stopping) return;
+    stopping = true;
+    fastExit = true; // matikan retry/backoff supaya tidak nyangkut
+    console.log('');
+    log(`berhenti (${why}) \u2014 tutup sesi (Ctrl+C lagi = keluar paksa)`);
+    const hardStop = setTimeout(() => {
+      console.log(C.y('  batas waktu 10s \u2014 keluar sekarang'));
+      process.exit(130);
+    }, 10_000);
+    await stopSession({}).catch(() => {});
+    clearTimeout(hardStop);
+    process.exit(0);
+  };
+  process.on('SIGINT', () => shutdown('Ctrl+C'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
 
   let sid = SESSION_KEY();
   if (!sid) {
@@ -1062,19 +1091,8 @@ async function cmdAuto(flags) {
   const startedAt = Date.now();
   let lastClaim = Date.now();
   let beats = 0;
-  let stopping = false;
 
-  const shutdown = async (why) => {
-    if (stopping) return;
-    stopping = true;
-    console.log('');
-    log(`berhenti (${why}) \u2014 klaim sisa lalu tutup sesi`);
-    await claimClaimable('akhir').catch(() => {});
-    if (!dry) await stopSession({}).catch(() => {});
-    process.exit(0);
-  };
-  process.on('SIGINT', () => shutdown('Ctrl+C'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
 
   while (!stopping) {
     try {
