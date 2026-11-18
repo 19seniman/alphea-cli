@@ -947,6 +947,111 @@ async function cmdCheckin(flags) {
   }
 }
 
+/** Auto: sesi foreground + heartbeat + klaim quest otomatis. */
+async function cmdAuto(flags) {
+  if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
+
+  const heartbeatSec = Math.max(15, Number(flags.interval ?? 60));
+  const maxHours = Number(flags.hours ?? 12);
+  const claimEveryMs = Math.max(60, Number(flags['claim-every'] ?? 5)) * 1000;
+  const dry = flags['dry-run'] === true;
+  const once = flags.once === true;
+
+  banner();
+  console.log(C.b('auto: session + quests') + C.dim(` \u2014 heartbeat ${heartbeatSec}s, klaim tiap ${claimEveryMs / 1000}s, maks ${maxHours} jam`));
+  if (dry) console.log(C.y('  DRY-RUN: tidak ada request tulis'));
+  console.log('');
+
+  let sid = SESSION_KEY();
+  if (!sid) {
+    if (dry) console.log(C.dim('  [dry] akan StartForegroundSession'));
+    else {
+      sid = await startSession();
+      if (!sid) die('server tidak memberi sessionId \u2014 cek respons StartForegroundSession');
+    }
+  } else {
+    console.log(C.dim(`  melanjutkan session ${sid}`));
+  }
+
+  await claimClaimable('awal');
+
+  const startedAt = Date.now();
+  let lastClaim = Date.now();
+  let beats = 0;
+  let stopping = false;
+
+  const shutdown = async (why) => {
+    if (stopping) return;
+    stopping = true;
+    console.log('');
+    log(`berhenti (${why}) \u2014 klaim sisa lalu tutup sesi`);
+    await claimClaimable('akhir').catch(() => {});
+    if (!dry) await stopSession({}).catch(() => {});
+    process.exit(0);
+  };
+  process.on('SIGINT', () => shutdown('Ctrl+C'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  while (!stopping) {
+    try {
+      if (dry) {
+        console.log(C.dim(`  [dry] heartbeat untuk ${sid}`));
+      } else {
+        const r = await heartbeatOnce(sid);
+        beats++;
+        const valid = r.validSeconds ?? r.session?.validSeconds ?? r.measuredSeconds;
+        log(`heartbeat #${beats}${valid !== undefined ? ` \u00b7 valid ${valid}s` : ''} \u00b7 jalan ${Math.round((Date.now() - startedAt) / 60000)}m`);
+      }
+
+      if (Date.now() - lastClaim >= claimEveryMs) {
+        await claimClaimable('berkala');
+        lastClaim = Date.now();
+      }
+
+      if (once) break;
+      if ((Date.now() - startedAt) / 3600000 >= maxHours) return shutdown(`batas ${maxHours} jam`);
+
+      await sleep(heartbeatSec * 1000 + Math.round(Math.random() * 4000));
+    } catch (e) {
+      if (e.http === 401 || e.code === 'unauthenticated') {
+        log(C.y('token ditolak \u2014 mencoba refresh'));
+        if (await refreshSession()) continue;
+        await shutdown('token mati');
+        die('jalankan: node alphea.js login', 3);
+      }
+      log(C.y(`error: ${e.message} \u2014 lanjut`));
+      await sleep(30000);
+    }
+  }
+}
+
+/** Klaim semua quest yang CLAIMABLE dan laporkan yang berhasil. */
+async function claimClaimable(tag) {
+  let list = [];
+  let map = {};
+  try {
+    const r = await fetchQuests();
+    list = r.list;
+    map = r.map;
+  } catch (e) {
+    log(C.y(`  daftar quest gagal: ${e.message}`));
+    return 0;
+  }
+  const claimable = list.filter((q) => q.state === 'QUEST_STATE_CLAIMABLE');
+  if (!claimable.length) return 0;
+  let n = 0;
+  for (const q of claimable) {
+    try {
+      await claimQuest(q.questId);
+      n++;
+      log(C.g(`  \u2714 klaim ${qName(q, map)} +${fmtMicros(q.reward)} pts ${C.dim(`(${tag})`)}`));
+    } catch (e) {
+      log(C.y(`  \u2716 ${qName(q, map)}: ${e.message}`));
+    }
+  }
+  return n;
+}
+
 async function cmdPoints(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
   const out = {};
@@ -1080,6 +1185,8 @@ ${C.b('PERINTAH')}
   ${C.c('session')}   foreground session: start | stop | ping | watch | status
   ${C.c('quests')}    daftar quest + progres
   ${C.c('checkin')}   klaim quest harian yang bisa diklaim
+  ${C.c('auto')}      jalan otomatis: sesi + heartbeat + klaim quest
+                     (--hours 12, --interval 60, --claim-every 5, --once, --dry-run)
   ${C.c('probe')}     cek endpoint edge mana yang hidup dengan tokenmu
   ${C.c('env')}       lihat .env (disamarkan)
   ${C.c('logout')}    hapus token dari .env
@@ -1149,6 +1256,8 @@ async function main() {
       return cmdSession(flags, args);
     case 'quests':
       return cmdQuests(flags);
+    case 'auto':
+      return cmdAuto(flags);
     case 'checkin':
       return cmdCheckin(flags);
     case 'probe':

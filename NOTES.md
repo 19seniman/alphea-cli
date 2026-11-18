@@ -119,6 +119,18 @@ Field JSON ber-camelCase: `questId`, `sessionId`, `deviceId`. Karena bentuk resp
 
 `RequestEmailChallenge` kadang dibalas **HTTP 503** sebelum berhasil. Itu kondisi gateway (bukan body salah) dan script menanganinya dengan backoff: 6s → 8s → 25s, lalu sukses. Kalau 503 terus muncul, tunggu 1–2 menit; jangan spam karena memperpanjang cooldown.
 
+## Perilaku `auto`
+
+Satu proses menjalankan tiga hal sekaligus:
+
+1. `StartForegroundSession` bila belum ada `ALPHEA_SESSION_ID` di `.env` (kalau ada, dilanjutkan).
+2. Loop `SubmitHeartbeat` tiap `--interval` detik (default 60) + jitter 0–4 detik, sehingga `measuredValue` pada quest `VALID_FOREGROUND_SECONDS` bertambah.
+3. Tiap `--claim-every` menit (default 5) memanggil `ListQuests` lalu `ClaimQuest` untuk setiap state `QUEST_STATE_CLAIMABLE` — ini yang membuat **Daily Check-In** terklaim tanpa perintah manual.
+
+Penghentian: `Ctrl+C`/SIGTERM → klaim terakhir + `EndForegroundSession`. Batas durasi `--hours` (default 12) agar tidak menggantung; 12 jam juga menutup tier tertinggi `12H Contribution Time` (43.200 detik).
+
+Kalau heartbeat membalas 401, script mencoba `RefreshSession`; kalau tetap gagal, sesi ditutup dan keluar dengan kode 3 (perlu `login` OTP lagi).
+
 ## Fitur yang TIDAK ada di API Hub
 
 - **Foreground Contribution Session** — tidak ada service/method-nya di Hub (tidak ada `SessionService`, `ContributionService`, `QuestService`; semua 404).

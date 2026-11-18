@@ -51,20 +51,45 @@ node alphea.js me
 node alphea.js points
 ```
 
-## 5) Foreground session & quests
+## 5) Jalankan otomatis (session + quests + daily check-in)
 
 ```bash
-node alphea.js session start        # mulai sesi kontribusi
-node alphea.js session watch        # heartbeat tiap 60 detik (Ctrl+C = stop rapi)
-node alphea.js session stop
-node alphea.js session status
-node alphea.js quests               # daftar quest + progres
-node alphea.js checkin              # klaim quest harian yang bisa diklaim
+node alphea.js auto
 ```
 
-`session watch` mengirim `SubmitHeartbeat` berkala dan menutup sesi dengan `EndForegroundSession` saat kamu tekan Ctrl+C.
+Satu perintah ini sudah mengerjakan semuanya:
 
-Opsi: `--interval 60` (detik heartbeat), `--json` untuk keluaran mentah.
+- `StartForegroundSession` (kalau belum ada sesi)
+- `SubmitHeartbeat` tiap 60 detik → menambah `VALID_FOREGROUND_SECONDS`
+- klaim otomatis setiap 5 menit untuk semua quest yang `CLAIMABLE`, termasuk **Daily Check-In**
+- klaim terakhir + `EndForegroundSession` saat Ctrl+C
+- berhenti sendiri setelah 12 jam
+
+Opsi:
+
+```bash
+node alphea.js auto --hours 12       # batas durasi
+node alphea.js auto --interval 60    # detik antar heartbeat
+node alphea.js auto --claim-every 5  # menit antar pengecekan klaim
+node alphea.js auto --once           # satu heartbeat + klaim, lalu keluar
+node alphea.js auto --dry-run        # tidak mengirim apa pun
+```
+
+Jalan terus di Termux:
+
+```bash
+termux-wake-lock
+nohup node alphea.js auto >> alphea-auto.log 2>&1 &
+tail -f alphea-auto.log
+```
+
+### Manual, kalau perlu
+
+```bash
+node alphea.js session start | stop | ping | watch | status
+node alphea.js quests      # daftar + progres
+node alphea.js checkin     # klaim yang bisa diklaim saja
+```
 
 ## Perintah lain
 
@@ -74,6 +99,7 @@ Opsi: `--interval 60` (detik heartbeat), `--json` untuk keluaran mentah.
 | `profile` | profil dari ProfileService |
 | `history` | riwayat poin |
 | `rounds` | daftar reward round |
+| `auto` | otomatis: sesi + heartbeat + klaim quest (termasuk daily check-in) |
 | `session` | foreground contribution: `start` / `stop` / `ping` / `watch` / `status` |
 | `quests` | daftar quest + progres |
 | `checkin` | klaim quest harian |
