@@ -405,8 +405,14 @@ const SVC = {
 };
 
 /** Panggil RPC gateway: POST {edge}/{service}/{method} */
-async function rpc(service, method, body = {}, { auth = true } = {}) {
+async function rpc(service, method, body = {}, { auth = true, retried = false } = {}) {
   const r = await send('POST', `${API_BASE}/${service}/${method}`, { body, auth });
+
+  // token bisa kedaluwarsa di tengah jalan: refresh sekali lalu ulangi
+  if (!r.ok && auth && !retried && (r.status === 401 || r.json?.code === 'unauthenticated')) {
+    if (await refreshSession()) return rpc(service, method, body, { auth, retried: true });
+  }
+
   if (!r.ok) {
     throw new ApiError({
       code: r.json?.code ?? `HTTP_${r.status}`,
