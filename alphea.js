@@ -408,7 +408,11 @@ async function rpc(service, method, body = {}, { auth = true } = {}) {
   if (!r.ok) {
     throw new ApiError({
       code: r.json?.code ?? `HTTP_${r.status}`,
-      message: r.json?.message ?? (r.text || '').slice(0, 120),
+      message:
+        r.json?.message ??
+        r.json?.error?.message ??
+        r.json?.detail ??
+        (r.text || '').slice(0, 200),
       http: r.status,
       path: `${service.split('.').pop()}/${method}`,
       body: r.json,
