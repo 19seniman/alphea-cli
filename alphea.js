@@ -728,14 +728,16 @@ async function probeSessionShapes() {
   const deviceId = getDeviceId();
   const v = APP_VERSION();
   const shapes = [
+    // platform kemungkinan enum, bukan string bebas
+    { deviceId, platform: 'DEVICE_PLATFORM_ANDROID', appVersion: v },
+    { deviceId, platform: 'DEVICE_PLATFORM_ANDROID' },
+    { deviceId, platform: 'DEVICE_PLATFORM_ANDROID', appVersion: v, buildNumber: '1' },
+    { device_id: deviceId, platform: 'DEVICE_PLATFORM_ANDROID', app_version: v },
+    { deviceId, platform: 'ANDROID', appVersion: v },
+    { deviceId, platform: 'PLATFORM_ANDROID', appVersion: v },
+    // baseline yang sudah dicoba
     { deviceId, platform: 'android', appVersion: v },
     { deviceId, platform: 'android', appVersion: v, heartbeatIntervalSeconds: 60 },
-    { deviceId, platform: 'android', appVersion: v, accountId: envGet('ALPHEA_ACCOUNT_ID') ?? undefined },
-    { deviceId, platform: 'android', appVersion: v, sessionId: 'x' },
-    { deviceId, platform: 'android', appVersion: v, model: 'Termux', buildNumber: '1' },
-    { deviceId, platform: 'android', appVersion: v, nonce: 'x' },
-    { device_id: deviceId, platform: 'android', app_version: v },
-    { device_id: deviceId, platform: 'android', app_version: v, heartbeat_interval_seconds: 60 },
     { deviceId, platform: 'android' },
     { deviceId },
   ].map((b) => Object.fromEntries(Object.entries(b).filter(([, x]) => x !== undefined)));
