@@ -1186,6 +1186,15 @@ async function claimClaimable(tag) {
   return n;
 }
 
+async function cmdMe(flags) {
+  if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
+  const cur = await currentSession();
+  if (flags.json) return console.log(JSON.stringify(cur, null, 2));
+  printUser(cur.user ?? cur);
+  const rest = Object.keys(cur).filter((k) => k !== 'user');
+  if (rest.length) console.log(C.dim(`  field: ${rest.join(', ')}`));
+}
+
 async function cmdPoints(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
   const out = {};
@@ -1354,6 +1363,27 @@ function about() {
 // Main
 // ---------------------------------------------------------------------------
 
+function selftest() {
+  const names = [
+    'cmdLogin', 'cmdOtp', 'cmdSetup', 'cmdEdit', 'cmdEnv', 'cmdLogout',
+    'cmdMe', 'cmdPoints', 'cmdProfile', 'cmdHistory', 'cmdRounds',
+    'cmdSession', 'cmdQuests', 'cmdCheckin', 'cmdAuto', 'cmdProbe',
+    'cmdGet', 'cmdPost', 'help', 'about',
+  ];
+  const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
+  let bad = 0;
+  for (const n of names) {
+    const ok = new RegExp(`(async )?function ${n}\\s*\\(`).test(src);
+    if (!ok) bad++;
+    console.log(`  ${ok ? C.g('\u2714') : C.r('\u2716')} ${n}`);
+  }
+  if (bad) {
+    console.log(C.r(`\n${bad} handler hilang`));
+    process.exit(1);
+  }
+  console.log(C.g('\nsemua handler ada'));
+}
+
 async function main() {
   const { cmd, args, flags } = parseArgs(process.argv.slice(2));
   if (ensureEnvFile()) ENV = readEnvFile();
@@ -1361,6 +1391,7 @@ async function main() {
 
   if (!cmd || cmd === 'help' || flags.help) return help();
   if (cmd === 'about') return about();
+  if (cmd === 'selftest') return selftest();
   if (cmd === 'version' || flags.version === true) return console.log(`alphea.js v${BRAND.version}`);
 
   switch (cmd) {
