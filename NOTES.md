@@ -136,25 +136,26 @@ Empat varian enum lolos (`appVersion` wajib-tidaknya opsional: tanpa appVersion 
 { "questId": "daily-login-1", "periodKey": "2026-11-18" }
 ```
 
-## Status ClaimQuest (19 Nov 2026)
+## ClaimQuest — bentuk yang benar (19 Nov 2026)
 
-Sudah dicoba 8 bentuk body, semuanya `invalid_argument` **tanpa pesan**:
+Server akhirnya memberi pesan yang jelas saat debug dinyalakan:
 
 ```
-{questId}                                  {questId, periodKey}
-{questId, claimIdempotencyKey}             {questId, periodKey, claimIdempotencyKey}
-{...seluruh field quest, accountId, deviceId, platform, appVersion, claimIdempotencyKey}
-snake_case: quest_id / period_key / claim_idempotency_key
+{"code":"invalid_argument","message":"idempotency_key required (1..128 chars)"}
+{"code":"invalid_argument","message":"period_key required (1..64 chars)"}
 ```
 
-Bukti tambahan:
-- Kunci `questId, periodKey, claimIdempotencyKey` memang yang dipakai bundle saat memanggil `claimQuest` (dibaca langsung dari disassembly).
-- Unknown field **tidak** ditolak: menyisipkan field asing ke `VerifyEmailChallenge` tidak mengubah respons, jadi penolakan bukan karena nama field asing.
-- Tidak ada header khusus di SDK (tanpa `x-*`), dan `connectClaimQuest` adalah modul native Kotlin tanpa `.so` — kemungkinan hanya meneruskan HTTP yang sama.
+Jadi field protobuf memakai **snake_case**, bukan camelCase seperti yang dipakai kode JS aplikasi:
 
-Kesimpulan sementara: `ListQuests`, `StartForegroundSession`, `SubmitHeartbeat`, dan `EndForegroundSession` berjalan dari script; `ClaimQuest` ditolak server tanpa alasan yang bisa dibaca.
+```json
+{ "quest_id": "daily-login-1", "period_key": "2026-11-18", "idempotency_key": "<uuid>" }
+```
 
-## Perilaku `auto`
+`period_key` diambil dari field `periodKey` pada objek quest (hasil `ListQuests`), `idempotency_key` UUID baru per percobaan (batas 128 karakter).
+
+Delapan percobaan sebelumnya semuanya gagal karena memakai `questId/periodKey/claimIdempotencyKey`.
+
+## Perilaku `auto`## Perilaku `auto`
 
 Satu proses menjalankan tiga hal sekaligus:
 

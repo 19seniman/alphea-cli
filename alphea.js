@@ -994,40 +994,22 @@ async function cmdQuests(flags) {
   showQuests(list, map);
 }
 
-/** ClaimQuest menolak {questId} maupun {questId,periodKey,claimIdempotencyKey}. */
+/**
+ * ClaimQuest: field protobuf memakai snake_case.
+ * Server: "period_key required (1..64 chars)", "idempotency_key required (1..128 chars)".
+ */
 async function claimQuest(q) {
   const idem = crypto.randomUUID();
   const accountId = envGet('ALPHEA_ACCOUNT_ID');
-  const extras = {
-    accountId,
-    deviceId: getDeviceId(),
-    platform: 'DEVICE_PLATFORM_ANDROID',
-    appVersion: APP_VERSION(),
-  };
   const clean = (b) => Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined && v !== null && v !== ''));
 
-  // super-set: seluruh isi objek quest + field konteks
-  const full = clean({
-    questId: q.questId,
-    period: q.period,
-    periodKey: q.periodKey,
-    metric: q.metric,
-    targetValue: q.targetValue,
-    measuredValue: q.measuredValue,
-    state: q.state,
-    claimIdempotencyKey: idem,
-    ...extras,
-  });
-
   const bodies = [
-    full,
-    clean({ questId: q.questId, period: q.period, periodKey: q.periodKey, claimIdempotencyKey: idem, ...extras }),
-    clean({ questId: q.questId, periodKey: q.periodKey, claimIdempotencyKey: idem, accountId }),
-    clean({ questId: q.questId, claimIdempotencyKey: idem, accountId }),
-    clean({ questId: q.questId, periodKey: q.periodKey, claimIdempotencyKey: idem }),
-    clean({ questId: q.questId, periodKey: q.periodKey }),
-    clean({ quest_id: q.questId, period_key: q.periodKey, claim_idempotency_key: idem }),
-    clean({ questId: q.questId }),
+    clean({ quest_id: q.questId, period_key: q.periodKey, idempotency_key: idem }),
+    clean({ quest_id: q.questId, period_key: q.periodKey, idempotency_key: idem, account_id: accountId }),
+    clean({ quest_id: q.questId, period_key: q.periodKey, idempotency_key: idem, device_id: getDeviceId() }),
+    clean({ questId: q.questId, period_key: q.periodKey, idempotency_key: idem }),
+    clean({ quest_id: q.questId, idempotencyKey: idem, periodKey: q.periodKey }),
+    clean({ quest_id: q.questId, period_key: q.periodKey, idempotency_key: idem, platform: 'DEVICE_PLATFORM_ANDROID' }),
   ];
   return rpcCandidates(SVC.quest, 'ClaimQuest', bodies);
 }
