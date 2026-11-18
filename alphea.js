@@ -128,6 +128,7 @@ ALPHEA_REFRESH_TOKEN=
 ALPHEA_CHALLENGE_ID=
 ALPHEA_DEVICE_ID=
 ALPHEA_SESSION_ID=
+ALPHEA_ACCOUNT_ID=
 ALPHEA_APP_VERSION=1.0.0
 # opsional
 ALPHEA_API_BASE=https://edge.alphea.ai
@@ -487,7 +488,13 @@ async function refreshSession() {
 
 async function currentSession({ retry = true } = {}) {
   try {
-    return await rpc(SVC.auth, 'CurrentSession', {});
+    const r = await rpc(SVC.auth, 'CurrentSession', {});
+    const acct = r?.user?.accountId ?? r?.accountId;
+    if (acct && acct !== ENV.ALPHEA_ACCOUNT_ID) {
+      writeEnvFile({ ALPHEA_ACCOUNT_ID: acct });
+      ENV = readEnvFile();
+    }
+    return r;
   } catch (e) {
     if ((e.http === 401 || e.code === 'unauthenticated') && retry && (await refreshSession())) {
       return currentSession({ retry: false });
@@ -985,23 +992,44 @@ async function cmdQuests(flags) {
   showQuests(list, map);
 }
 
-/** ClaimQuest butuh questId + periodKey (keduanya ada di objek quest). */
+/** ClaimQuest menolak {questId} maupun {questId,periodKey,claimIdempotencyKey}. */
 async function claimQuest(q) {
-  const id = q.questId;
-  const pk = q.periodKey;
-  // bundle memakai 'claimIdempotencyKey' saat memanggil claimQuest
   const idem = crypto.randomUUID();
+  const accountId = envGet('ALPHEA_ACCOUNT_ID');
+  const extras = {
+    accountId,
+    deviceId: getDeviceId(),
+    platform: 'DEVICE_PLATFORM_ANDROID',
+    appVersion: APP_VERSION(),
+  };
+  const clean = (b) => Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+
+  // super-set: seluruh isi objek quest + field konteks
+  const full = clean({
+    questId: q.questId,
+    period: q.period,
+    periodKey: q.periodKey,
+    metric: q.metric,
+    targetValue: q.targetValue,
+    measuredValue: q.measuredValue,
+    state: q.state,
+    claimIdempotencyKey: idem,
+    ...extras,
+  });
+
   const bodies = [
-    { questId: id, claimIdempotencyKey: idem },
-    { questId: id, periodKey: pk, claimIdempotencyKey: idem },
-    { questId: id, periodKey: pk },
-    { quest_id: id, claim_idempotency_key: idem },
-    { questId: id },
-  ].filter((b) => Object.values(b).every((v) => v !== undefined && v !== ''));
+    full,
+    clean({ questId: q.questId, period: q.period, periodKey: q.periodKey, claimIdempotencyKey: idem, ...extras }),
+    clean({ questId: q.questId, periodKey: q.periodKey, claimIdempotencyKey: idem, accountId }),
+    clean({ questId: q.questId, claimIdempotencyKey: idem, accountId }),
+    clean({ questId: q.questId, periodKey: q.periodKey, claimIdempotencyKey: idem }),
+    clean({ questId: q.questId, periodKey: q.periodKey }),
+    clean({ quest_id: q.questId, period_key: q.periodKey, claim_idempotency_key: idem }),
+    clean({ questId: q.questId }),
+  ];
   return rpcCandidates(SVC.quest, 'ClaimQuest', bodies);
 }
 
-/** Klaim semua quest yang state-nya CLAIMABLE (termasuk Daily Check-In). */
 async function cmdCheckin(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
   const { list, map } = await fetchQuests();
