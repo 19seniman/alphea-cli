@@ -128,6 +128,7 @@ ALPHEA_REFRESH_TOKEN=
 ALPHEA_CHALLENGE_ID=
 ALPHEA_DEVICE_ID=
 ALPHEA_SESSION_ID=
+ALPHEA_APP_VERSION=1.0.0
 # opsional
 ALPHEA_API_BASE=https://edge.alphea.ai
 `;
@@ -659,7 +660,7 @@ function cmdEnv() {
     console.log(C.y(`  (belum ada email terisi \u2014 ${fs.statSync(ENV_FILE).size} byte)`));
     return console.log(C.dim('  isi: node alphea.js setup   atau   node alphea.js edit'));
   }
-  for (const k of ['ALPHEA_EMAIL', 'ALPHEA_ACCESS_TOKEN', 'ALPHEA_REFRESH_TOKEN', 'ALPHEA_CHALLENGE_ID', 'ALPHEA_DEVICE_ID', 'ALPHEA_SESSION_ID', 'ALPHEA_API_BASE']) {
+  for (const k of ['ALPHEA_EMAIL', 'ALPHEA_ACCESS_TOKEN', 'ALPHEA_REFRESH_TOKEN', 'ALPHEA_CHALLENGE_ID', 'ALPHEA_DEVICE_ID', 'ALPHEA_SESSION_ID', 'ALPHEA_APP_VERSION', 'ALPHEA_API_BASE']) {
     if (ENV[k]) console.log(`  ${k.padEnd(22)} ${/TOKEN|CHALLENGE/.test(k) ? mask(ENV[k], 6) : ENV[k]}`);
   }
   try {
@@ -677,6 +678,19 @@ async function cmdLogout() {
 }
 
 // --- Foreground Contribution Session ---------------------------------------
+
+const APP_VERSION = () => envGet('ALPHEA_APP_VERSION', '1.0.0');
+
+/** Daftarkan device (best-effort). Beberapa akun butuh ini sebelum start sesi. */
+async function registerDevice() {
+  const body = { deviceId: getDeviceId(), platform: 'android', appVersion: APP_VERSION() };
+  try {
+    await rpc(SVC.auth, 'RegisterDevice', body);
+    return { ok: true, body };
+  } catch (e) {
+    return { ok: false, code: e.code, body };
+  }
+}
 
 function getDeviceId() {
   let id = envGet('ALPHEA_DEVICE_ID');
@@ -709,11 +723,55 @@ async function rpcCandidates(service, method, bodies) {
   throw new ApiError({ code: 'RPC_FAILED', message: errs.join(' | ') });
 }
 
+/** Coba matriks bentuk body StartForegroundSession; cetak mana yang lolos validasi. */
+async function probeSessionShapes() {
+  const deviceId = getDeviceId();
+  const v = APP_VERSION();
+  const shapes = [
+    { deviceId, platform: 'android', appVersion: v },
+    { deviceId, platform: 'android', appVersion: v, heartbeatIntervalSeconds: 60 },
+    { deviceId, platform: 'android', appVersion: v, accountId: envGet('ALPHEA_ACCOUNT_ID') ?? undefined },
+    { deviceId, platform: 'android', appVersion: v, sessionId: 'x' },
+    { deviceId, platform: 'android', appVersion: v, model: 'Termux', buildNumber: '1' },
+    { deviceId, platform: 'android', appVersion: v, nonce: 'x' },
+    { device_id: deviceId, platform: 'android', app_version: v },
+    { device_id: deviceId, platform: 'android', app_version: v, heartbeat_interval_seconds: 60 },
+    { deviceId, platform: 'android' },
+    { deviceId },
+  ].map((b) => Object.fromEntries(Object.entries(b).filter(([, x]) => x !== undefined)));
+
+  section('probe StartForegroundSession');
+  for (let i = 0; i < shapes.length; i++) {
+    const body = shapes[i];
+    let note;
+    try {
+      const r = await rpc(SVC.activity, 'StartForegroundSession', body);
+      const sid = r?.sessionId ?? r?.session?.sessionId ?? r?.id;
+      note = C.g(`OK${sid ? ` sessionId=${sid}` : ''}`);
+      if (sid) setSessionId(sid);
+    } catch (e) {
+      note = e.code === 'invalid_argument' ? C.dim('invalid_argument') : C.y(`${e.code}${e.http ? ` (${e.http})` : ''}`);
+    }
+    console.log(`  ${String(i + 1).padStart(2)}. ${Object.keys(body).join(', ')}`);
+    console.log(`      ${note}`);
+  }
+  console.log(C.dim('\n  kirim baris yang bukan "invalid_argument" — dari situ bentuk body-nya ketahuan'));
+}
+
 async function startSession() {
   const deviceId = getDeviceId();
+  const appVersion = APP_VERSION();
+
+  // device sering harus terdaftar dulu
+  const reg = await registerDevice();
+  console.log(C.dim(`  RegisterDevice ${reg.ok ? '\u2714' : `\u2716 ${reg.code}`}`));
+
   const r = await rpcCandidates(SVC.activity, 'StartForegroundSession', [
-    { deviceId },
+    { deviceId, platform: 'android', appVersion },
+    { deviceId, platform: 'android', appVersion, heartbeatIntervalSeconds: 60 },
+    { deviceId, appVersion },
     { deviceId, platform: 'android' },
+    { deviceId },
     {},
   ]);
   const sid = r.data?.sessionId ?? r.data?.session?.sessionId ?? r.data?.session?.id ?? r.data?.id;
@@ -742,6 +800,8 @@ async function heartbeatOnce(sid) {
 async function cmdSession(flags, args) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
   const sub = args[0] ?? 'status';
+
+  if (sub === 'shapes') return probeSessionShapes();
 
   if (sub === 'start') {
     const sid = await startSession();
@@ -1189,7 +1249,7 @@ ${C.b('PERINTAH')}
   ${C.c('profile')}   profil dari ProfileService
   ${C.c('history')}   riwayat poin
   ${C.c('rounds')}    daftar reward round
-  ${C.c('session')}   foreground session: start | stop | ping | watch | status
+  ${C.c('session')}   foreground session: start | stop | ping | watch | status | shapes
   ${C.c('quests')}    daftar quest + progres
   ${C.c('checkin')}   klaim quest harian yang bisa diklaim
   ${C.c('auto')}      jalan otomatis: sesi + heartbeat + klaim quest
