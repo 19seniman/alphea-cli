@@ -495,15 +495,38 @@ async function currentSession({ retry = true } = {}) {
 
 function printUser(u) {
   if (!u) return console.log(C.y('(profil kosong)'));
+  const obj = u.user ?? u;
   section('akun');
-  kv('email', u.email ?? '\u2014');
-  kv('id', u.id ?? '\u2014');
-  kv('dibuat', u.created_at ? new Date(u.created_at).toLocaleString() : '\u2014');
-  kv('login terakhir', u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : '\u2014');
-  kv('email verified', u.email_confirmed_at ? C.g('ya') : C.y('belum'));
-  const meta = u.user_metadata ?? {};
-  const keys = Object.keys(meta).filter((k) => ['name', 'full_name', 'username', 'display_name', 'avatar_url', 'wallet'].includes(k));
-  for (const k of keys) kv(k, String(meta[k]).slice(0, 60));
+  const label = {
+    email: 'email',
+    userId: 'id',
+    id: 'id',
+    authUserId: 'authUserId',
+    username: 'username',
+    displayName: 'nama',
+    createdAt: 'dibuat',
+    createdTime: 'dibuat',
+    lastSignInAt: 'login terakhir',
+    lastLoginAt: 'login terakhir',
+    emailVerified: 'email verified',
+    emailConfirmed: 'email verified',
+  };
+  const scalars = Object.entries(obj).filter(([, v]) => v === null || typeof v !== 'object');
+  // email duluan, sisanya urutan asli
+  scalars.sort((a, b) => (a[0] === 'email' ? -1 : b[0] === 'email' ? 1 : 0));
+  let shown = 0;
+  for (const [k, v] of scalars) {
+    let val = v;
+    if (typeof v === 'string' && /At$|Time$|_at$/.test(k) && !Number.isNaN(Date.parse(v))) val = new Date(v).toLocaleString();
+    if (/verified|confirmed/i.test(k)) val = v ? C.g('ya') : C.y('belum');
+    if (v === '' || v === null) val = C.dim('(kosong)');
+    kv(label[k] ?? k, String(val).slice(0, 60));
+    shown++;
+  }
+  if (!shown) {
+    console.log(C.dim(`  field: ${Object.keys(obj).join(', ') || '(kosong)'}`));
+    console.log(C.dim(`  ${JSON.stringify(obj).slice(0, 300)}`));
+  }
 }
 
 async function cmdLogin(flags) {

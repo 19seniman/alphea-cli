@@ -72,6 +72,14 @@ Teks UI pendukung: "Active today · Resets daily", layar `DailyQuestScreen`, `Da
 
 Field JSON ber-camelCase: `questId`, `sessionId`, `deviceId`. Karena bentuk respons belum terlihat dengan akun nyata, `quests` membaca `quests`/`items`/`data` dan `checkin` memakai `period` + `state` apa adanya; kalau kosong, script mencetak respons mentah.
 
+## Bentuk data profil
+
+`CurrentSession` membalas `{user:{…}, sessionId, expiresAt}` dengan **camelCase** (`userId`, `createdAt`, `lastSignInAt`, `emailVerified`), bukan snake_case gaya GoTrue. `printUser()` sekarang mencetak semua field skalar apa adanya, jadi kalau ada field baru langsung kelihatan tanpa perlu ubah kode.
+
+## 503 dari gateway
+
+`RequestEmailChallenge` kadang dibalas **HTTP 503** sebelum berhasil. Itu kondisi gateway (bukan body salah) dan script menanganinya dengan backoff: 6s → 8s → 25s, lalu sukses. Kalau 503 terus muncul, tunggu 1–2 menit; jangan spam karena memperpanjang cooldown.
+
 ## Fitur yang TIDAK ada di API Hub
 
 - **Foreground Contribution Session** — tidak ada service/method-nya di Hub (tidak ada `SessionService`, `ContributionService`, `QuestService`; semua 404).
