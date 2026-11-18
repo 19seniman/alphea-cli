@@ -70,6 +70,45 @@ Enum yang dipakai app:
 
 Teks UI pendukung: "Active today · Resets daily", layar `DailyQuestScreen`, `DailyQuestCard`, `ActivityUnavailable`.
 
+Bentuk respons `ListQuests` (terlihat 18 Nov 2026):
+
+```json
+{
+  "quests": [{
+    "questId": "daily-login-1",
+    "metric": "QUEST_METRIC_AUTHENTICATED_LOGIN_COUNT",
+    "period": "QUEST_PERIOD_DAILY",
+    "targetValue": "1",          // string, bukan number
+    "measuredValue": "1",        // string
+    "reward": { "micros": "600000000" },   // 1 poin = 1.000.000 micros → 600 pts
+    "state": "QUEST_STATE_CLAIMABLE",
+    "periodKey": "2026-11-18",
+    "resetAt": "2026-11-19T00:00:00Z"
+  }],
+  "serverTime": "…",
+  "questDisplayNames": {
+    "daily-login-1": { "names": { "en": "Daily Check-In" } }
+  }
+}
+```
+
+Nama quest **tidak** ada di dalam objek quest — harus diambil dari `questDisplayNames[questId].names.en`.
+
+Period yang dipakai: `QUEST_PERIOD_DAILY` dan `QUEST_PERIOD_LIFETIME` (bukan hanya DAILY).
+Metric yang dipakai: `VALID_FOREGROUND_SECONDS`, `AUTHENTICATED_LOGIN_COUNT`, `ACTIVE_INVITEE_COUNT`, `VALID_INVITEE_COUNT`.
+
+Daftar quest harian + reward di akun contoh:
+
+| Quest | Syarat | Reward |
+|---|---|---|
+| Daily Check-In | 1 login | 600 |
+| 1H Contribution Time | 3.600 detik | 800 |
+| 3H Contribution Time | 10.800 detik | 1.300 |
+| 6H Contribution Time | 21.600 detik | 1.800 |
+| 12H Contribution Time | 43.200 detik | 2.500 |
+| 5–1.000 Active Referrals | referral aktif | 200–600 |
+| 1–100 Qualified Referral (lifetime) | referral valid | 1.000–50.000 |
+
 Field JSON ber-camelCase: `questId`, `sessionId`, `deviceId`. Karena bentuk respons belum terlihat dengan akun nyata, `quests` membaca `quests`/`items`/`data` dan `checkin` memakai `period` + `state` apa adanya; kalau kosong, script mencetak respons mentah.
 
 ## Bentuk data profil

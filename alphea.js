@@ -803,104 +803,150 @@ async function watchSession(sid, flags) {
 // --- Quests & daily check-in ------------------------------------------------
 
 const QUEST_STATE = {
-  QUEST_STATE_LOCKED: ['terkunci', (s) => C.dim(s)],
-  QUEST_STATE_IN_PROGRESS: ['berjalan', (s) => C.y(s)],
-  QUEST_STATE_CLAIMABLE: ['bisa diklaim', (s) => C.g(s)],
-  QUEST_STATE_CLAIMED: ['sudah', (s) => C.dim(s)],
+  QUEST_STATE_LOCKED: 'terkunci',
+  QUEST_STATE_IN_PROGRESS: 'berjalan',
+  QUEST_STATE_CLAIMABLE: 'bisa diklaim',
+  QUEST_STATE_CLAIMED: 'sudah',
 };
+
+const PERIOD_LABEL = {
+  QUEST_PERIOD_DAILY: 'harian',
+  QUEST_PERIOD_WEEKLY: 'mingguan',
+  QUEST_PERIOD_LIFETIME: 'lifetime',
+};
+
+const METRIC_LABEL = {
+  QUEST_METRIC_VALID_FOREGROUND_SECONDS: 'waktu kontribusi',
+  QUEST_METRIC_AUTHENTICATED_LOGIN_COUNT: 'jumlah login',
+  QUEST_METRIC_ACTIVE_INVITEE_COUNT: 'referral aktif',
+  QUEST_METRIC_VALID_INVITEE_COUNT: 'referral qualified',
+};
+
+const qNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** reward.micros → poin (1 poin = 1.000.000 micros) */
+function fmtMicros(v) {
+  const n = Number(v?.micros ?? v ?? 0) / 1e6;
+  if (!Number.isFinite(n)) return '?';
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function qName(q, map) {
+  const fromMap = map?.[q.questId]?.names?.en;
+  return fromMap ?? q.questId;
+}
+
+function fmtSeconds(sec) {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const rest = s % 60;
+  if (h > 0) return `${h}j ${m}m`;
+  if (m > 0) return `${m}m ${rest}s`;
+  return `${rest}s`;
+}
+
+function fmtProgress(q) {
+  const cur = qNum(q.measuredValue);
+  const target = qNum(q.targetValue);
+  if (!target) return `${cur}`;
+  if (q.metric === 'QUEST_METRIC_VALID_FOREGROUND_SECONDS') return `${fmtSeconds(cur)} / ${fmtSeconds(target)}`;
+  return `${cur}/${target}`;
+}
+
+function progressBar(q, width = 14) {
+  const cur = qNum(q.measuredValue);
+  const target = qNum(q.targetValue) || 1;
+  const pct = Math.max(0, Math.min(1, cur / target));
+  const f = Math.round(pct * width);
+  return `${C.c('\u2588'.repeat(f) + '\u2591'.repeat(width - f))} ${(pct * 100).toFixed(0)}%`;
+}
 
 function questList(payload) {
   const arr = payload?.quests ?? payload?.items ?? payload?.data ?? [];
   return Array.isArray(arr) ? arr : [];
 }
 
-function showQuests(list) {
-  section(`quests (${list.length})`);
+function sortQuests(list) {
+  const rank = (q) => (q.state === 'QUEST_STATE_CLAIMABLE' ? 0 : q.state === 'QUEST_STATE_IN_PROGRESS' ? 1 : q.state === 'QUEST_STATE_LOCKED' ? 2 : 3);
+  return [...list].sort((a, b) => {
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
+    const da = a.period === 'QUEST_PERIOD_DAILY' ? 0 : 1;
+    const db = b.period === 'QUEST_PERIOD_DAILY' ? 0 : 1;
+    return da - db;
+  });
+}
+
+function showQuests(list, map) {
+  const claimable = list.filter((q) => q.state === 'QUEST_STATE_CLAIMABLE');
+  section(`quests (${list.length}${claimable.length ? ` \u00b7 ${claimable.length} bisa diklaim` : ''})`);
   if (!list.length) return console.log(C.y('  belum ada quest dari server'));
-  for (const q of list) {
-    const id = q.questId ?? q.quest_id ?? q.id ?? '?';
-    const period = (q.period ?? '').replace('QUEST_PERIOD_', '').toLowerCase();
-    const state = (q.state ?? '').replace('QUEST_STATE_', '');
-    const label = QUEST_STATE[q.state]?.[0] ?? state.toLowerCase();
-    const prog = q.progress ?? q.current;
-    const target = q.target ?? q.goal;
-    const reward = q.reward ?? q.rewardPoints ?? q.points;
-    const mark = q.state === 'QUEST_STATE_CLAIMABLE' ? C.g('\u25cf') : q.state === 'QUEST_STATE_CLAIMED' ? C.dim('\u2714') : C.dim('\u25cb');
-    console.log(`  ${mark} ${C.b(String(q.name ?? q.title ?? id).slice(0, 34))}`);
-    const bits = [label];
-    if (period) bits.push(period);
-    if (prog !== undefined && target !== undefined) bits.push(`${prog}/${target}`);
-    if (reward !== undefined) bits.push(`reward ${reward}`);
-    bits.push(C.dim(String(id).slice(0, 18)));
+
+  for (const q of sortQuests(list)) {
+    const mark =
+      q.state === 'QUEST_STATE_CLAIMABLE' ? C.g('\u25cf') : q.state === 'QUEST_STATE_CLAIMED' ? C.dim('\u2714') : C.dim('\u25cb');
+    const period = PERIOD_LABEL[q.period] ?? (q.period ?? '').replace('QUEST_PERIOD_', '').toLowerCase();
+    const state = QUEST_STATE[q.state] ?? (q.state ?? '?').replace('QUEST_STATE_', '').toLowerCase();
+    console.log(`  ${mark} ${C.b(qName(q, map).slice(0, 34))} ${C.dim(`\u00b7 ${period}`)}`);
+    const bits = [state, fmtProgress(q), `${fmtMicros(q.reward)} pts`];
+    if (q.metric === 'QUEST_METRIC_VALID_FOREGROUND_SECONDS' && q.state === 'QUEST_STATE_IN_PROGRESS') bits.push(progressBar(q));
     console.log(C.dim(`      ${bits.join('  \u00b7 ')}`));
   }
+  console.log(C.dim('\n  \u25cf bisa diklaim   \u2714 sudah   \u25cb belum'));
 }
 
 async function fetchQuests() {
   const r = await rpc(SVC.quest, 'ListQuests', {});
-  return { raw: r, list: questList(r) };
+  return { raw: r, list: questList(r), map: r.questDisplayNames ?? {} };
 }
 
 async function cmdQuests(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
-  const { raw, list } = await fetchQuests();
+  const { raw, list, map } = await fetchQuests();
   if (flags.json) return console.log(JSON.stringify(raw, null, 2));
-  showQuests(list);
-  if (!list.length) console.log(C.dim(`  respons: ${JSON.stringify(raw).slice(0, 300)}`));
+  showQuests(list, map);
 }
 
 async function claimQuest(id) {
   return rpcCandidates(SVC.quest, 'ClaimQuest', [{ questId: id }, { quest_id: id }]);
 }
 
-/** Klaim semua quest yang bisa diklaim (termasuk daily check-in). */
+/** Klaim semua quest yang state-nya CLAIMABLE (termasuk Daily Check-In). */
 async function cmdCheckin(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
-  const { list } = await fetchQuests();
-  const daily = list.filter((q) => (q.period ?? '').includes('DAILY'));
-  const pool = daily.length ? daily : list;
-  const claimable = pool.filter((q) => q.state === 'QUEST_STATE_CLAIMABLE');
+  const { list, map } = await fetchQuests();
+  const claimable = list.filter((q) => q.state === 'QUEST_STATE_CLAIMABLE');
 
-  if (flags.json) return console.log(JSON.stringify({ daily, claimable }, null, 2));
+  if (flags.json) return console.log(JSON.stringify({ claimable }, null, 2));
 
-  section('daily check-in');
-  if (!pool.length) {
-    console.log(C.y('  tidak ada quest harian di akun ini'));
-    return;
-  }
-  for (const q of pool) {
-    const id = q.questId ?? q.quest_id ?? q.id;
-    const state = QUEST_STATE[q.state]?.[0] ?? (q.state ?? '?').toLowerCase();
-    const prog = q.progress ?? q.current;
-    const target = q.target ?? q.goal;
-    console.log(`  ${dot(q.state === 'QUEST_STATE_CLAIMABLE')} ${String(q.name ?? id).slice(0, 36)} ${C.dim(`${state}${prog !== undefined && target !== undefined ? ` ${prog}/${target}` : ''}`)}`);
-  }
-
+  section(`check-in (${claimable.length} bisa diklaim)`);
   if (!claimable.length) {
-    console.log(C.dim('\n  tidak ada yang bisa diklaim sekarang'));
+    const daily = list.filter((q) => q.period === 'QUEST_PERIOD_DAILY' && q.state === 'QUEST_STATE_IN_PROGRESS');
+    if (daily.length) {
+      console.log(C.dim('  belum ada yang bisa diklaim. Yang masih berjalan:'));
+      for (const q of daily.slice(0, 6)) console.log(C.dim(`    ${qName(q, map)} \u2014 ${fmtProgress(q)}`));
+    } else {
+      console.log(C.dim('  semua quest harian sudah diklaim'));
+    }
     return;
   }
+
   for (const q of claimable) {
-    const id = q.questId ?? q.quest_id ?? q.id;
+    const id = q.questId;
     try {
       const r = await claimQuest(id);
-      console.log(C.g(`  \u2714 klaim ${q.name ?? id}${r.data?.rewardPoints ?? r.data?.points ? ` \u2192 ${r.data.rewardPoints ?? r.data.points}` : ''}`));
+      const got = r.data?.reward ?? r.data?.points ?? q.reward;
+      console.log(`  ${C.g('\u2714')} ${qName(q, map)} ${C.dim(`+${fmtMicros(got)} pts`)}`);
     } catch (e) {
-      console.log(C.y(`  gagal klaim ${id}: ${e.message}`));
+      console.log(`  ${C.y('\u2716')} ${qName(q, map)} ${C.dim(e.message)}`);
     }
   }
 }
 
-async function cmdMe(flags) {
-  if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
-  const cur = await currentSession();
-  if (flags.json) return console.log(JSON.stringify(cur, null, 2));
-  printUser(cur.user ?? cur);
-  const rest = Object.keys(cur).filter((k) => k !== 'user');
-  if (rest.length) console.log(C.dim(`  field: ${rest.join(', ')}`));
-}
-
-/** Endpoint Hub yang sudah terverifikasi dari bundel Hub (42 method). */
 async function cmdPoints(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
   const out = {};
