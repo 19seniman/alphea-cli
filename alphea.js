@@ -728,17 +728,12 @@ async function probeSessionShapes() {
   const deviceId = getDeviceId();
   const v = APP_VERSION();
   const shapes = [
-    // platform kemungkinan enum, bukan string bebas
+    // terbukti: platform enum DEVICE_PLATFORM_ANDROID
     { deviceId, platform: 'DEVICE_PLATFORM_ANDROID', appVersion: v },
     { deviceId, platform: 'DEVICE_PLATFORM_ANDROID' },
-    { deviceId, platform: 'DEVICE_PLATFORM_ANDROID', appVersion: v, buildNumber: '1' },
     { device_id: deviceId, platform: 'DEVICE_PLATFORM_ANDROID', app_version: v },
-    { deviceId, platform: 'ANDROID', appVersion: v },
-    { deviceId, platform: 'PLATFORM_ANDROID', appVersion: v },
-    // baseline yang sudah dicoba
+    // pembanding (ditolak server)
     { deviceId, platform: 'android', appVersion: v },
-    { deviceId, platform: 'android', appVersion: v, heartbeatIntervalSeconds: 60 },
-    { deviceId, platform: 'android' },
     { deviceId },
   ].map((b) => Object.fromEntries(Object.entries(b).filter(([, x]) => x !== undefined)));
 
@@ -750,7 +745,14 @@ async function probeSessionShapes() {
       const r = await rpc(SVC.activity, 'StartForegroundSession', body);
       const sid = r?.sessionId ?? r?.session?.sessionId ?? r?.id;
       note = C.g(`OK${sid ? ` sessionId=${sid}` : ''}`);
-      if (sid) setSessionId(sid);
+      if (sid) {
+        // jangan tinggalkan sesi menggantung: tutup lagi setelah dicatat
+        await rpcCandidates(SVC.activity, 'EndForegroundSession', [
+          { sessionId: sid },
+          { session_id: sid },
+        ]).catch(() => {});
+        note += C.dim('  (sesi ditutup lagi)');
+      }
     } catch (e) {
       note = e.code === 'invalid_argument' ? C.dim('invalid_argument') : C.y(`${e.code}${e.http ? ` (${e.http})` : ''}`);
     }
@@ -760,38 +762,42 @@ async function probeSessionShapes() {
   console.log(C.dim('\n  kirim baris yang bukan "invalid_argument" — dari situ bentuk body-nya ketahuan'));
 }
 
+const SESSION_BODY = () => ({
+  deviceId: getDeviceId(),
+  platform: 'DEVICE_PLATFORM_ANDROID',
+  appVersion: APP_VERSION(),
+});
+
+/** Bentuk body yang sudah terbukti diterima server (shapes #1). */
 async function startSession() {
-  const deviceId = getDeviceId();
-  const appVersion = APP_VERSION();
-
-  // device sering harus terdaftar dulu
-  const reg = await registerDevice();
-  console.log(C.dim(`  RegisterDevice ${reg.ok ? '\u2714' : `\u2716 ${reg.code}`}`));
-
-  const r = await rpcCandidates(SVC.activity, 'StartForegroundSession', [
-    { deviceId, platform: 'android', appVersion },
-    { deviceId, platform: 'android', appVersion, heartbeatIntervalSeconds: 60 },
-    { deviceId, appVersion },
-    { deviceId, platform: 'android' },
-    { deviceId },
-    {},
-  ]);
-  const sid = r.data?.sessionId ?? r.data?.session?.sessionId ?? r.data?.session?.id ?? r.data?.id;
-  if (sid) setSessionId(sid);
+  const body = SESSION_BODY();
+  const r = await rpc(SVC.activity, 'StartForegroundSession', body);
+  const sid = r?.sessionId ?? r?.session?.sessionId ?? r?.id;
   section('session');
-  console.log(`  ${C.g('\u2714')} StartForegroundSession ${C.dim(`(body: ${Object.keys(r.body).join(', ') || 'kosong'})`)}`);
-  if (sid) kv('sessionId', C.b(sid));
-  else console.log(C.dim(`  respons: ${JSON.stringify(r.data).slice(0, 200)}`));
+  console.log(`  ${C.g('\u2714')} StartForegroundSession`);
+  if (sid) {
+    setSessionId(sid);
+    kv('sessionId', C.b(sid));
+  } else {
+    console.log(C.dim(`  respons: ${JSON.stringify(r).slice(0, 200)}`));
+  }
+  const hb = r?.heartbeatIntervalSeconds;
+  if (hb) kv('heartbeat', `${hb}s (dari server)`);
   return sid;
 }
 
 async function stopSession(flags) {
   const sid = (typeof flags.session === 'string' ? flags.session : null) ?? SESSION_KEY();
-  const r = await rpcCandidates(SVC.activity, 'EndForegroundSession', sid ? [{ sessionId: sid }, { session_id: sid }, {}] : [{}]);
-  setSessionId('');
+  if (!sid) return console.log(C.y('tidak ada sessionId \u2014 pakai: session stop --session <id>'));
+  const r = await rpcCandidates(SVC.activity, 'EndForegroundSession', [
+    { sessionId: sid },
+    { session_id: sid },
+    { sessionId: sid, platform: 'DEVICE_PLATFORM_ANDROID' },
+  ]);
+  if (ENV.ALPHEA_SESSION_ID === sid) setSessionId('');
   section('session');
-  console.log(`  ${C.g('\u2714')} EndForegroundSession`);
-  console.log(C.dim(`  respons: ${JSON.stringify(r.data).slice(0, 200)}`));
+  console.log(`  ${C.g('\u2714')} EndForegroundSession ${C.dim(`(body: ${Object.keys(r.body).join(', ')})`)}`);
+  console.log(C.dim(`  ${JSON.stringify(r.data).slice(0, 160)}`));
 }
 
 async function heartbeatOnce(sid) {
@@ -973,8 +979,17 @@ async function cmdQuests(flags) {
   showQuests(list, map);
 }
 
-async function claimQuest(id) {
-  return rpcCandidates(SVC.quest, 'ClaimQuest', [{ questId: id }, { quest_id: id }]);
+/** ClaimQuest butuh questId + periodKey (keduanya ada di objek quest). */
+async function claimQuest(q) {
+  const id = q.questId;
+  const pk = q.periodKey;
+  const bodies = [
+    { questId: id, periodKey: pk },
+    { questId: id },
+    { quest_id: id, period_key: pk },
+    { questId: id, period_key: pk },
+  ].filter((b) => Object.values(b).every((v) => v !== undefined && v !== ''));
+  return rpcCandidates(SVC.quest, 'ClaimQuest', bodies);
 }
 
 /** Klaim semua quest yang state-nya CLAIMABLE (termasuk Daily Check-In). */
@@ -1000,7 +1015,7 @@ async function cmdCheckin(flags) {
   for (const q of claimable) {
     const id = q.questId;
     try {
-      const r = await claimQuest(id);
+      const r = await claimQuest(q);
       const got = r.data?.reward ?? r.data?.points ?? q.reward;
       console.log(`  ${C.g('\u2714')} ${qName(q, map)} ${C.dim(`+${fmtMicros(got)} pts`)}`);
     } catch (e) {
@@ -1111,7 +1126,7 @@ async function claimClaimable(tag) {
   let n = 0;
   for (const q of claimable) {
     try {
-      await claimQuest(q.questId);
+      await claimQuest(q);
       n++;
       log(C.g(`  \u2714 klaim ${qName(q, map)} +${fmtMicros(q.reward)} pts ${C.dim(`(${tag})`)}`));
     } catch (e) {

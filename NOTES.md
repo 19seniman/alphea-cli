@@ -119,6 +119,23 @@ Field JSON ber-camelCase: `questId`, `sessionId`, `deviceId`. Karena bentuk resp
 
 `RequestEmailChallenge` kadang dibalas **HTTP 503** sebelum berhasil. Itu kondisi gateway (bukan body salah) dan script menanganinya dengan backoff: 6s → 8s → 25s, lalu sukses. Kalau 503 terus muncul, tunggu 1–2 menit; jangan spam karena memperpanjang cooldown.
 
+## Bentuk body yang terbukti (19 Nov 2026)
+
+`StartForegroundSession` menolak `platform: "android"` dengan `invalid_argument`. Yang diterima adalah **nilai enum**:
+
+```json
+{ "deviceId": "…", "platform": "DEVICE_PLATFORM_ANDROID", "appVersion": "1.0.0" }
+→ { "sessionId": "293ee4ff-9fa1-4223-a399-ab39d55ea00f", … }
+```
+
+Empat varian enum lolos (`appVersion` wajib-tidaknya opsional: tanpa appVersion pun OK), semua varian string ditolak.
+
+`ClaimQuest` juga menolak `{questId}` saja — perlu `periodKey` dari objek quest:
+
+```json
+{ "questId": "daily-login-1", "periodKey": "2026-11-18" }
+```
+
 ## Perilaku `auto`
 
 Satu proses menjalankan tiga hal sekaligus:
