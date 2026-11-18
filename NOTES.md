@@ -136,6 +136,24 @@ Empat varian enum lolos (`appVersion` wajib-tidaknya opsional: tanpa appVersion 
 { "questId": "daily-login-1", "periodKey": "2026-11-18" }
 ```
 
+## Status ClaimQuest (19 Nov 2026)
+
+Sudah dicoba 8 bentuk body, semuanya `invalid_argument` **tanpa pesan**:
+
+```
+{questId}                                  {questId, periodKey}
+{questId, claimIdempotencyKey}             {questId, periodKey, claimIdempotencyKey}
+{...seluruh field quest, accountId, deviceId, platform, appVersion, claimIdempotencyKey}
+snake_case: quest_id / period_key / claim_idempotency_key
+```
+
+Bukti tambahan:
+- Kunci `questId, periodKey, claimIdempotencyKey` memang yang dipakai bundle saat memanggil `claimQuest` (dibaca langsung dari disassembly).
+- Unknown field **tidak** ditolak: menyisipkan field asing ke `VerifyEmailChallenge` tidak mengubah respons, jadi penolakan bukan karena nama field asing.
+- Tidak ada header khusus di SDK (tanpa `x-*`), dan `connectClaimQuest` adalah modul native Kotlin tanpa `.so` — kemungkinan hanya meneruskan HTTP yang sama.
+
+Kesimpulan sementara: `ListQuests`, `StartForegroundSession`, `SubmitHeartbeat`, dan `EndForegroundSession` berjalan dari script; `ClaimQuest` ditolak server tanpa alasan yang bisa dibaca.
+
 ## Perilaku `auto`
 
 Satu proses menjalankan tiga hal sekaligus:
