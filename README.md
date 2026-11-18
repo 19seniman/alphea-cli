@@ -63,12 +63,15 @@ Satu perintah ini sudah mengerjakan semuanya:
 - `SubmitHeartbeat` tiap 60 detik → menambah `VALID_FOREGROUND_SECONDS`
 - klaim otomatis setiap 5 menit untuk semua quest yang `CLAIMABLE`, termasuk **Daily Check-In**
 - klaim terakhir + `EndForegroundSession` saat Ctrl+C
-- berhenti sendiri setelah 12 jam
+- default berhenti setelah 12 jam; pakai `--hours 0` untuk jalan terus
+
+Berhenti hanya karena: `Ctrl+C`, `--hours` tercapai, atau token mati dan refresh gagal (exit 3).
 
 Opsi:
 
 ```bash
-node alphea.js auto --hours 12       # batas durasi
+node alphea.js auto --hours 12       # batas durasi (default)
+node alphea.js auto --hours 0        # tanpa batas, jalan terus lintas hari
 node alphea.js auto --interval 60    # detik antar heartbeat
 node alphea.js auto --claim-every 5  # menit antar pengecekan klaim
 node alphea.js auto --once           # satu heartbeat + klaim, lalu keluar

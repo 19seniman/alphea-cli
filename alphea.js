@@ -953,12 +953,19 @@ async function cmdAuto(flags) {
 
   const heartbeatSec = Math.max(15, Number(flags.interval ?? 60));
   const maxHours = Number(flags.hours ?? 12);
+  const unlimited = maxHours <= 0;
   const claimEveryMs = Math.max(60, Number(flags['claim-every'] ?? 5)) * 1000;
   const dry = flags['dry-run'] === true;
   const once = flags.once === true;
 
   banner();
-  console.log(C.b('auto: session + quests') + C.dim(` \u2014 heartbeat ${heartbeatSec}s, klaim tiap ${claimEveryMs / 1000}s, maks ${maxHours} jam`));
+  console.log(
+    C.b('auto: session + quests') +
+      C.dim(
+        ` \u2014 heartbeat ${heartbeatSec}s, klaim tiap ${claimEveryMs / 1000}s, ` +
+          (unlimited ? 'tanpa batas jam (Ctrl+C untuk stop)' : `maks ${maxHours} jam`),
+      ),
+  );
   if (dry) console.log(C.y('  DRY-RUN: tidak ada request tulis'));
   console.log('');
 
@@ -1009,7 +1016,7 @@ async function cmdAuto(flags) {
       }
 
       if (once) break;
-      if ((Date.now() - startedAt) / 3600000 >= maxHours) return shutdown(`batas ${maxHours} jam`);
+      if (!unlimited && (Date.now() - startedAt) / 3600000 >= maxHours) return shutdown(`batas ${maxHours} jam`);
 
       await sleep(heartbeatSec * 1000 + Math.round(Math.random() * 4000));
     } catch (e) {
@@ -1186,7 +1193,8 @@ ${C.b('PERINTAH')}
   ${C.c('quests')}    daftar quest + progres
   ${C.c('checkin')}   klaim quest harian yang bisa diklaim
   ${C.c('auto')}      jalan otomatis: sesi + heartbeat + klaim quest
-                     (--hours 12, --interval 60, --claim-every 5, --once, --dry-run)
+                     (--hours 12 | 0 = tanpa batas, --interval 60, --claim-every 5,
+                      --once, --dry-run)
   ${C.c('probe')}     cek endpoint edge mana yang hidup dengan tokenmu
   ${C.c('env')}       lihat .env (disamarkan)
   ${C.c('logout')}    hapus token dari .env
