@@ -11,7 +11,7 @@ git clone
 
 Perintah ini membuat `.env` berisi template.
 
-# 2) Isi email
+# 2) Add email
 
 ```bash
 node alphea.js setup --email emailkamu@mail.com
