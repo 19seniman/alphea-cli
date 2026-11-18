@@ -982,7 +982,11 @@ function showQuests(list, map) {
     const state = QUEST_STATE[q.state] ?? (q.state ?? '?').replace('QUEST_STATE_', '').toLowerCase();
     console.log(`  ${mark} ${C.b(qName(q, map).slice(0, 34))} ${C.dim(`\u00b7 ${period}`)}`);
     const bits = [state, fmtProgress(q), `${fmtMicros(q.reward)} pts`];
-    if (q.metric === 'QUEST_METRIC_VALID_FOREGROUND_SECONDS' && q.state === 'QUEST_STATE_IN_PROGRESS') bits.push(progressBar(q));
+    if (q.state === 'QUEST_STATE_IN_PROGRESS') {
+      const cur = qNum(q.measuredValue);
+      const target = qNum(q.targetValue) || 1;
+      bits.push(`${Math.min(100, Math.round((cur / target) * 100))}%`);
+    }
     console.log(C.dim(`      ${bits.join('  \u00b7 ')}`));
   }
   console.log(C.dim('\n  \u25cf bisa diklaim   \u2714 sudah   \u25cb belum'));

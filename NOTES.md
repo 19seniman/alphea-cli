@@ -155,6 +155,20 @@ Jadi field protobuf memakai **snake_case**, bukan camelCase seperti yang dipakai
 
 Delapan percobaan sebelumnya semuanya gagal karena memakai `questId/periodKey/claimIdempotencyKey`.
 
+## Hasil verifikasi di akun nyata (19 Nov 2026)
+
+| Langkah | Bukti |
+|---|---|
+| Login email + OTP | `VerifyEmailChallenge` → token, profil terbaca |
+| Daftar quest | 20 quest, progres & reward tampil benar |
+| Mulai sesi | `{deviceId, platform: DEVICE_PLATFORM_ANDROID, appVersion}` → `sessionId`, `heartbeatIntervalSeconds: 60` |
+| Heartbeat menambah detik | `measuredValue` 60s → 1m 21s setelah sesi berjalan ±2 menit |
+| Klaim quest | `{quest_id, period_key, idempotency_key}` → `Daily Check-In +600 pts` |
+| Tutup sesi | `{session_id}` → `{accumulatedValidSeconds, sessionStatus:"ended"}` |
+| Poin | `GetPointBalance`/`GetPointSummary` mengembalikan micros |
+
+Catatan skala: `balance.micros` pada akun contoh menghasilkan 39.800 pts saat dibagi 1e6, jadi angka mentahnya ikut ditampilkan di output (commit sesudah ini) untuk memverifikasi skala.
+
 ## Perilaku `auto`## Perilaku `auto`
 
 Satu proses menjalankan tiga hal sekaligus:
