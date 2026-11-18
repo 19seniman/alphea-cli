@@ -7,6 +7,7 @@ Script Node.js
 
 ```bash
 git clone https://github.com/19seniman/alphea-cli.git
+cd alphea-cli
 ```
 
 Perintah ini membuat `.env` berisi template.
