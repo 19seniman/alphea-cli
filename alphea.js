@@ -1185,6 +1185,14 @@ async function cmdMe(flags) {
   if (rest.length) console.log(C.dim(`  field: ${rest.join(', ')}`));
 }
 
+const micros = (v) => (Number(v?.micros ?? v ?? 0) || 0) / 1e6;
+const fmtPts = (v) => micros(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+const pts = (v) => {
+  const n = Number(v?.micros ?? v ?? 0) / 1e6;
+  return `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+};
+
 async function cmdPoints(flags) {
   if (!session.accessToken) die('belum login \u2014 jalankan: node alphea.js login');
   const out = {};
@@ -1200,11 +1208,34 @@ async function cmdPoints(flags) {
     }
   }
   if (flags.json) return console.log(JSON.stringify(out, null, 2));
+
+  const bal = out.balance ?? {};
+  const sum = out.summary ?? {};
   section('points');
-  for (const [k, v] of Object.entries(out)) {
-    if (v?.error) kv(k, C.r(v.error));
-    else kv(k, JSON.stringify(v).slice(0, 120));
+  if (bal.error) kv('balance', C.r(bal.error));
+  else {
+    kv('saldo', C.b(C.g(pts(bal.balance))));
+    if (bal.earnedToday !== undefined) kv('hari ini', pts(bal.earnedToday));
+    if (bal.allTime !== undefined) kv('all time', pts(bal.allTime));
+    if (bal.currentRound !== undefined) kv('round ini', pts(bal.currentRound));
+    if (bal.roundId) kv('roundId', String(bal.roundId).slice(0, 40));
   }
+  if (sum.earnedToday !== undefined && bal.earnedToday === undefined) kv('hari ini', pts(sum.earnedToday));
+  if (sum.currentRound !== undefined && bal.currentRound === undefined) kv('round ini', pts(sum.currentRound));
+
+  const cl = out.claimable;
+  if (cl?.error) kv('claimable', C.r(cl.error));
+  else {
+    const rewards = cl?.rewards ?? [];
+    const total = cl?.page?.totalCount ?? rewards.length;
+    kv('bisa diklaim', total ? C.g(`${total} reward`) : C.dim('tidak ada'));
+    for (const r of rewards.slice(0, 5)) {
+      const amt = pts(r.amount ?? r.reward ?? r);
+      const rid = r.id ?? r.rewardId ?? r.roundId ?? '';
+      console.log(C.dim(`      ${amt} ${rid ? `\u00b7 ${String(rid).slice(0, 18)}` : ''}`));
+    }
+  }
+  if (bal.serverTime) console.log(C.dim(`\n  serverTime ${bal.serverTime}`));
 }
 
 async function cmdProfile(flags) {
