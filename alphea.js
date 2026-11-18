@@ -1189,8 +1189,11 @@ const micros = (v) => (Number(v?.micros ?? v ?? 0) || 0) / 1e6;
 const fmtPts = (v) => micros(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 const pts = (v) => {
-  const n = Number(v?.micros ?? v ?? 0) / 1e6;
-  return `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+  const raw = Number(v?.micros ?? v ?? 0);
+  const n = raw / 1e6;
+  const shown = `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+  // tampilkan angka mentah supaya skala micros bisa diverifikasi
+  return raw ? `${shown} ${C.dim(`(${raw.toLocaleString('en-US')} µ)`)}` : shown;
 };
 
 async function cmdPoints(flags) {
