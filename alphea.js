@@ -381,7 +381,8 @@ async function send(method, url, { body, auth = true, timeoutMs = GUARD.timeoutM
       json = text ? JSON.parse(text) : null;
     } catch {}
     if (isDebug()) {
-      console.log(C.dim(`  [debug] ${method} ${url} \u2192 ${res.status}`));
+      const rid = res.headers.get('x-request-id') ?? '';
+      console.log(C.dim(`  [debug] ${method} ${url} \u2192 ${res.status}${rid ? `  rid=${rid}` : ''}`));
       console.log(C.dim(`  [debug] ${JSON.stringify(maskDeep(json ?? text)).slice(0, 500)}`));
     }
     return { status: res.status, ok: res.ok, json, text };
@@ -729,7 +730,8 @@ async function rpcCandidates(service, method, bodies) {
       const r = await rpc(service, method, body);
       return { ok: true, data: r, body };
     } catch (e) {
-      errs.push(`${Object.keys(body).join('+') || '(kosong)'} → ${e.code}`);
+      const extra = e.body && typeof e.body === 'object' ? JSON.stringify(e.body).slice(0, 80) : String(e.body ?? '');
+      errs.push(`${Object.keys(body).join('+') || '(kosong)'} \u2192 ${e.code}${e.http ? `/${e.http}` : ''}${extra ? ` ${extra}` : ''}`);
       if (e.http === 401 || e.code === 'unauthenticated') break;
     }
   }
